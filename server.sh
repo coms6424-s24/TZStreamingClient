@@ -1,1 +1,0 @@
-python3 hls-stream/server.py hls-stream/testdata/m1-all_Custom.m3u8
