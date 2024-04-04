@@ -2,6 +2,7 @@ import cv2
 import socket
 import pickle
 import struct
+from Crypto.Cipher import AES
 
 # Server
 server_port = 9999
@@ -12,6 +13,11 @@ video_file = "big_buck_bunny_240p_30mb.mp4"
 
 # ------------
 server_socket = None
+
+def key_generation():
+    key = b'Sixteen byte key'
+    cipher = AES.new(key, AES.MODE_EAX)
+    ciphertext, tag = cipher.encrypt_and_digest(data)
 
 def server_init():
     # Create a socket server
