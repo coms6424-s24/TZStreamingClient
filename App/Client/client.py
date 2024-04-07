@@ -3,53 +3,54 @@ import socket
 import pickle
 import struct
 
-# Server
-server_port = 9999
-server_addr = "127.0.0.1"
 
-def client_init():
-    # Create a socket client
-    video_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    video_client_socket.connect((server_addr, server_port))  # Replace with the server’s IP address
-    return video_client_socket
+class Client:
+    def __init__(self) -> None:
+        # Server
+        self.server_port = 9999
+        self.server_addr = "127.0.0.1"
+        # Create a socket client
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect((self.server_addr, self.server_port))
 
-def receive_frames(video_client_socket):
-    received_data = b""
-    payload_size = struct.calcsize("L")
+    def __del__(self):
+        self.client_socket.close()
 
-    while True:
-        # Receive and assemble the data until the payload size is reached
-        while len(received_data) < payload_size:
-            received_data += video_client_socket.recv(4096)
+    def receive_video(self):
+        received_data = b""
+        payload_size = struct.calcsize("L")
 
-        # Extract the packed message size
-        packed_msg_size = received_data[:payload_size]
-        received_data = received_data[payload_size:]
-        msg_size = struct.unpack("L", packed_msg_size)[0]
+        while True:
+            # Receive and assemble the data until the payload size is reached
+            while len(received_data) < payload_size:
+                received_data += self.client_socket.recv(4096)
 
-        # Receive and assemble the frame data until the complete frame is received
-        while len(received_data) < msg_size:
-            received_data += video_client_socket.recv(4096)
+            # Extract the packed message size
+            packed_msg_size = received_data[:payload_size]
+            received_data = received_data[payload_size:]
+            msg_size = struct.unpack("L", packed_msg_size)[0]
 
-        # Extract the frame data
-        frame_data = received_data[:msg_size]
-        received_data = received_data[msg_size:]
+            # Receive and assemble the frame data until the complete frame is received
+            while len(received_data) < msg_size:
+                received_data += self.client_socket.recv(4096)
 
-        # Deserialize the received frame
-        received_frame = pickle.loads(frame_data)
+            # Extract the frame data
+            frame_data = received_data[:msg_size]
+            received_data = received_data[msg_size:]
 
-        # Display the received frame
-        cv2.imshow('Client Video', received_frame)
+            # Deserialize the received frame
+            received_frame = pickle.loads(frame_data)
 
-        # Press ‘q’ to quit
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            # Display the received frame
+            cv2.imshow("Client Video", received_frame)
 
-    # Release resources
-    cv2.destroyAllWindows()
-    video_client_socket.close()
+            # Press ‘q’ to quit
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+        # Release resources
+        cv2.destroyAllWindows()
 
 
-if __name__ == "__main__":
-    video_client_socket = client_init()
-    receive_frames(video_client_socket)
+client = Client()
+client.receive_video()
