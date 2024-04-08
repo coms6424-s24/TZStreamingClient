@@ -1,0 +1,1 @@
+// TODO: send public key to server, before starting streaming app

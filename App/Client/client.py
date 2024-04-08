@@ -18,7 +18,7 @@ class Client:
 
     def receive_video(self):
         received_data = b""
-        payload_size = struct.calcsize("L")
+        payload_size = struct.calcsize("L")  # unsigned long integer
 
         while True:
             # Receive and assemble the data until the payload size is reached
@@ -35,8 +35,11 @@ class Client:
                 received_data += self.client_socket.recv(4096)
 
             # Extract the frame data
-            frame_data = received_data[:msg_size]
+            frame_data_encrypted = received_data[:msg_size]
             received_data = received_data[msg_size:]
+
+            # TODO: decrypt OP-TEE
+            frame_data = frame_data_encrypted
 
             # Deserialize the received frame
             received_frame = pickle.loads(frame_data)
