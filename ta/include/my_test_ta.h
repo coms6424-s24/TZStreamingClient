@@ -39,5 +39,5 @@
 /* The function IDs implemented in this TA */
 #define TA_MY_TEST_CMD_INC_VALUE		0
 #define TA_MY_TEST_CMD_DEC_VALUE		1
-
+#define TA_MY_TEST_CMD_GET_PUBLIC_KEY   2
 #endif /*TA_MY_TEST_H*/

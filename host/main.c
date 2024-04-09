@@ -43,6 +43,8 @@ int main(void)
 	TEEC_Operation op;
 	TEEC_UUID uuid = TA_MY_TEST_UUID;
 	uint32_t err_origin;
+	uint8_t public_key[512]; 
+    size_t public_key_size = sizeof(public_key);
 
 	/* Initialize a context connecting us to the TEE */
 	res = TEEC_InitializeContext(NULL, &ctx);
@@ -70,33 +72,28 @@ int main(void)
 	/* Clear the TEEC_Operation struct */
 	memset(&op, 0, sizeof(op));
 
-	/*
-	 * Prepare the argument. Pass a value in the first parameter,
-	 * the remaining three parameters are unused.
-	 */
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INOUT, TEEC_NONE,
-					 TEEC_NONE, TEEC_NONE);
-	op.params[0].value.a = 42;
 
-	/*
-	 * TA_MY_TEST_CMD_INC_VALUE is the actual function in the TA to be
-	 * called.
-	 */
-	printf("Invoking TA to increment %d\n", op.params[0].value.a);
-	res = TEEC_InvokeCommand(&sess, TA_MY_TEST_CMD_INC_VALUE, &op,
-				 &err_origin);
-	if (res != TEEC_SUCCESS)
-		errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x",
-			res, err_origin);
-	printf("TA incremented value to %d\n", op.params[0].value.a);
 
-	/*
-	 * We're done with the TA, close the session and
-	 * destroy the context.
-	 *
-	 * The TA will print "Goodbye!" in the log when the
-	 * session is closed.
-	 */
+	// pass the public key
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_OUTPUT, TEEC_NONE, TEEC_NONE, TEEC_NONE);
+    op.params[0].tmpref.buffer = public_key;
+    op.params[0].tmpref.size = public_key_size;
+
+ 	// call TA for public key
+    res = TEEC_InvokeCommand(&sess, TA_MY_TEST_CMD_GET_PUBLIC_KEY, &op, &err_origin);
+	printf("Actual size of the received public key: %zu\n", public_key_size);
+    if (res != TEEC_SUCCESS) {
+        errx(1, "TEEC_InvokeCommand failed with code 0x%x origin 0x%x", res, err_origin);
+    } else {
+        // print the public key
+        public_key_size = op.params[0].tmpref.size;  // real size of the PK
+        printf("Received public key: \n");
+        for (size_t i = 0; i < public_key_size; i++) {
+            printf("%02X", public_key[i]);
+            if ((i + 1) % 16 == 0) printf("\n"); else printf(" ");
+        }
+        printf("\n");
+    }
 
 	TEEC_CloseSession(&sess);
 
