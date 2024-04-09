@@ -34,13 +34,49 @@
  * Called when the instance of the TA is created. This is the first call in
  * the TA.
  */
-TEE_Result TA_CreateEntryPoint(void)
-{
-	DMSG("has been called");
+// TEE_Result TA_CreateEntryPoint(void)
+// {
+// 	DMSG("has been called");
 
-	return TEE_SUCCESS;
+// 	return TEE_SUCCESS;
+// }
+
+// public key variable
+uint8_t g_public_key[512]; 
+uint32_t g_public_key_size = sizeof(g_public_key);
+
+TEE_Result TA_CreateEntryPoint(void) {
+    TEE_Result res;
+    TEE_ObjectHandle rsa_keypair = TEE_HANDLE_NULL;
+    uint32_t key_size = 2048;
+    uint32_t rsa_public_key = TEE_ATTR_RSA_PUBLIC_EXPONENT;
+
+	// allocation
+    res = TEE_AllocateTransientObject(TEE_TYPE_RSA_KEYPAIR, key_size, &rsa_keypair);
+    if (res != TEE_SUCCESS) {
+        EMSG("Failed to allocate RSA keypair object");
+        return res;
+    }
+	//generation
+    res = TEE_GenerateKey(rsa_keypair, key_size, NULL, 0);
+    if (res != TEE_SUCCESS) {
+        EMSG("Failed to generate RSA keypair");
+        goto cleanup;
+    }
+
+    // get the public key
+    res = TEE_GetObjectBufferAttribute(rsa_keypair, rsa_public_key, g_public_key, &g_public_key_size);
+    if (res != TEE_SUCCESS) {
+        EMSG("Failed to extract public key");
+        goto cleanup;
+    }
+
+    IMSG("Public key extracted and stored.");
+
+cleanup:
+    TEE_FreeTransientObject(rsa_keypair);
+    return res;
 }
-
 /*
  * Called when the instance of the TA is destroyed if the TA has not
  * crashed or panicked. This is the last call in the TA.
