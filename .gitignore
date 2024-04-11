@@ -1,5 +1,9 @@
 *.o
 *.out
 *.exe
+*.dmp
+*.map
+*.stripped.elf
+*.ta
 /build/
 /output/
