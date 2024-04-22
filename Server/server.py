@@ -7,7 +7,7 @@ import threading
 
 
 # Video file
-frame_rate = 15  # fps
+frame_rate = 1  # fps
 video_file = "big_buck_bunny_240p_30mb.mp4"
 
 
@@ -54,25 +54,21 @@ class Server:
         video_capture = cv2.VideoCapture(video_file)
 
         while True:
-            # Read a frame from the camera
             ret, frame = video_capture.read()
-
-            # Serialize the frame to bytes
             serialized_frame = pickle.dumps(frame)
 
-            # Pack the data size and frame data
-
             for client_socket, client_address in self.client_socket_list:
-                if self.server_key.has_shared_key(client_address):
-                    encrypted_frame = self.server_key.encrypt(
-                        client_address, serialized_frame
-                    )
-                    message_size = struct.pack("L", len(encrypted_frame))
-                    client_socket.sendall(message_size + encrypted_frame)
+                # send frame to client
+                message_size = struct.pack("L", len(serialized_frame))
+                client_socket.sendall(message_size + serialized_frame)
+                # if self.server_key.has_shared_key(client_address):
+                #     encrypted_frame = self.server_key.encrypt(
+                #         client_address, serialized_frame
+                #     )
+                #     message_size = struct.pack("L", len(encrypted_frame))
+                #     client_socket.sendall(message_size + encrypted_frame)
 
-            # Display the frame on the server-side
             cv2.imshow("Server Video", frame)
-            # keep framerate
             cv2.waitKey(int(1000 / frame_rate))
             # Press 'q' to quit
             if cv2.waitKey(1) & 0xFF == ord("q"):
