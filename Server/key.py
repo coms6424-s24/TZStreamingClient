@@ -2,7 +2,7 @@ import pyDHE
 
 
 class insecure_key_storage:
-    def __init__(self, key):
+    def __init__(self):
         self.my_key = pyDHE.new()
         self.shared_key = dict()
 

@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.log": "Log",
+        "stdio.h": "c",
+        "string.h": "c"
+    }
+}

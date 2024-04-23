@@ -5,8 +5,8 @@
 *.map
 *.stripped.elf
 *.ta
-/build/
-/output/
+build/
+output/
 GPATH
 GRTAGS
 GSYMS
@@ -22,3 +22,4 @@ GTAGS
 *.ta
 cscope.*
 out/
+__pycache__/

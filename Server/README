@@ -1,0 +1,12 @@
+dependency:
+
+Server:
+sudo apt-get update
+sudo apt install python3-pip
+pip install opencv-python
+pip install pyDHE
+pip install pycryptodome
+sudo apt-get install ffmpeg libsm6 libxext6  -y
+
+Host:
+apt install libopencv-dev
