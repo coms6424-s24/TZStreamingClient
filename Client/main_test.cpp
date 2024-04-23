@@ -10,4 +10,5 @@ int main()
     {
         receive_frame();
     }
+    return 0;
 }

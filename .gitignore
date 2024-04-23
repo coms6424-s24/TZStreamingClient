@@ -24,6 +24,7 @@ cscope.*
 out/
 __pycache__/
 opencv-4.x/
+opencv/
 CMakeFiles/
 *.cmake
 CMakeCache.txt

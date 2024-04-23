@@ -2,6 +2,16 @@
     "files.associations": {
         "*.log": "Log",
         "stdio.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "*.inc": "cpp",
+        "bitset": "cpp",
+        "chrono": "cpp",
+        "algorithm": "cpp",
+        "array": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "span": "cpp",
+        "regex": "cpp",
+        "utility": "cpp"
     }
 }

@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <string>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -46,12 +47,24 @@ int open_connection()
 int receive_frame()
 {
     int count;
+    cv::namedWindow("Client", cv::WINDOW_AUTOSIZE);
     while ((count = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0)
     {
         printf("Received %d bytes\n", count);
+
         cv::Mat rawData(1, count, CV_8UC1, (void *)buffer);
         cv::Mat decoded_frame = cv::imdecode(rawData, cv::IMREAD_COLOR);
         cv::imshow("Client", decoded_frame);
+        cv::waitKey(25);
     }
     return 1;
+}
+
+void test()
+{
+    cv::namedWindow("Client", cv::WINDOW_AUTOSIZE);
+    cv::Mat image = cv::imread("./avatar.png", 1);
+    cout << image.size() << endl;
+    cv::imshow("Client", image);
+    cv::waitKey(25);
 }
