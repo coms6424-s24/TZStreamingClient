@@ -4,7 +4,8 @@
 #include <string>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <opencv2>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
 #define PAYLOAD_SIZE 8
 #define BUFFER_SIZE 1 << 30
 #define MSG_LEN 230564
@@ -45,9 +46,12 @@ int open_connection()
 int receive_frame()
 {
     int count;
-    while ((count = recv(client_socket, buffer, BUFFER_SIZE, 0)) == 0)
-        ;
-    strcat(received_data, buffer);
-    cv::Mat imgbuf = cv::Mat(480, 640, CV_8U, imageBuf);
-    return count;
+    while ((count = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0)
+    {
+        printf("Received %d bytes\n", count);
+        cv::Mat rawData(1, count, CV_8UC1, (void *)buffer);
+        cv::Mat decoded_frame = cv::imdecode(rawData, cv::IMREAD_COLOR);
+        cv::imshow("Client", decoded_frame);
+    }
+    return 1;
 }

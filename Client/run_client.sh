@@ -1,3 +1,4 @@
 #python3 client.py
-make test
-./test
+cd build
+cmake ..
+make
