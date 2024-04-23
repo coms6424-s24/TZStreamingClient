@@ -1,4 +1,3 @@
 #python3 client.py
-cd build
-cmake ..
+cmake .
 make
