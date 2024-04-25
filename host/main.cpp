@@ -2,16 +2,20 @@
 #include <stdio.h>
 #include <string.h>
 
-
 /* OP-TEE TEE client API (built by optee_client) */
 #include <tee_client_api.h>
 
 /* For the UUID (found in the TA's h-file(s)) */
 #include <my_test_ta.h>
-
+#include "include/client.h"
 
 int main(void)
 {
+    if (open_connection())
+    {
+        receive_frame();
+    }
+
     TEEC_Result res;
     TEEC_Context ctx;
     TEEC_Session sess;
