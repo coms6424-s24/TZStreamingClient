@@ -30,201 +30,161 @@
 
 #include <my_test_ta.h>
 
-/*
- * Called when the instance of the TA is created. This is the first call in
- * the TA.
- */
-// TEE_Result TA_CreateEntryPoint(void)
-// {
-// 	DMSG("has been called");
+struct acipher
+{
+    TEE_ObjectHandle key;
+};
 
-// 	return TEE_SUCCESS;
-// }
-
-// public key variable
-uint8_t g_public_modulus[256];
-uint8_t g_public_exponent[3]; 
-uint32_t g_public_modulus_size = sizeof(g_public_modulus);
-uint32_t g_public_exponent_size = sizeof(g_public_exponent);
-
-TEE_Result TA_CreateEntryPoint(void) {
+static TEE_Result cmd_gen_key(struct acipher *state, uint32_t pt,
+                              TEE_Param params[TEE_NUM_PARAMS])
+{
     TEE_Result res;
-    TEE_ObjectHandle rsa_keypair = TEE_HANDLE_NULL;
-    uint32_t key_size = 2048;
+    uint32_t key_size;
+    TEE_ObjectHandle key;
+    const uint32_t key_type = TEE_TYPE_RSA_KEYPAIR;
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE);
 
-    // Allocate RSA keypair object
-    res = TEE_AllocateTransientObject(TEE_TYPE_RSA_KEYPAIR, key_size, &rsa_keypair);
-    if (res != TEE_SUCCESS) {
-        EMSG("Failed to allocate RSA keypair object");
+    if (pt != exp_pt)
+        return TEE_ERROR_BAD_PARAMETERS;
+
+    key_size = params[0].value.a;
+
+    res = TEE_AllocateTransientObject(key_type, key_size, &key);
+    if (res)
+    {
+        EMSG("TEE_AllocateTransientObject(%#" PRIx32 ", %" PRId32 "): %#" PRIx32, key_type, key_size, res);
         return res;
     }
 
-    // Generate RSA keypair
-    res = TEE_GenerateKey(rsa_keypair, key_size, NULL, 0);
-    if (res != TEE_SUCCESS) {
-        EMSG("Failed to generate RSA keypair");
-        TEE_FreeTransientObject(rsa_keypair);
+    res = TEE_GenerateKey(key, key_size, NULL, 0);
+    if (res)
+    {
+        EMSG("TEE_GenerateKey(%" PRId32 "): %#" PRIx32,
+             key_size, res);
+        TEE_FreeTransientObject(key);
         return res;
     }
 
-    // Get the public key modulus
-    res = TEE_GetObjectBufferAttribute(rsa_keypair, TEE_ATTR_RSA_MODULUS, g_public_modulus, &g_public_modulus_size);
-    if (res != TEE_SUCCESS) {
-        EMSG("Failed to extract RSA public key modulus");
-        TEE_FreeTransientObject(rsa_keypair);
-        return res;
-    }
-
-    // Get the public exponent
-    res = TEE_GetObjectBufferAttribute(rsa_keypair, TEE_ATTR_RSA_PUBLIC_EXPONENT, g_public_exponent, &g_public_exponent_size);
-    if (res != TEE_SUCCESS) {
-        EMSG("Failed to extract RSA public key exponent");
-        TEE_FreeTransientObject(rsa_keypair);
-        return res;
-    }
-
-    IMSG("Public key modulus and exponent extracted and stored.");
-
-    TEE_FreeTransientObject(rsa_keypair);
-
+    TEE_FreeTransientObject(state->key);
+    state->key = key;
     return TEE_SUCCESS;
 }
 
-/*
- * Called when the instance of the TA is destroyed if the TA has not
- * crashed or panicked. This is the last call in the TA.
- */
+static TEE_Result cmd_enc(struct acipher *state, uint32_t pt,
+                          TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    const void *inbuf;
+    uint32_t inbuf_len;
+    void *outbuf;
+    uint32_t outbuf_len;
+    TEE_OperationHandle op;
+    TEE_ObjectInfo key_info;
+    const uint32_t alg = TEE_ALG_RSAES_PKCS1_V1_5;
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE);
+
+    if (pt != exp_pt)
+        return TEE_ERROR_BAD_PARAMETERS;
+    if (!state->key)
+        return TEE_ERROR_BAD_STATE;
+
+    res = TEE_GetObjectInfo1(state->key, &key_info);
+    if (res)
+    {
+        EMSG("TEE_GetObjectInfo1: %#" PRIx32, res);
+        return res;
+    }
+
+    inbuf = params[0].memref.buffer;
+    inbuf_len = params[0].memref.size;
+    outbuf = params[1].memref.buffer;
+    outbuf_len = params[1].memref.size;
+
+    res = TEE_AllocateOperation(&op, alg, TEE_MODE_ENCRYPT,
+                                key_info.keySize);
+    if (res)
+    {
+        EMSG("TEE_AllocateOperation(TEE_MODE_ENCRYPT, %#" PRIx32 ", %" PRId32 "): %#" PRIx32, alg, key_info.keySize, res);
+        return res;
+    }
+
+    res = TEE_SetOperationKey(op, state->key);
+    if (res)
+    {
+        EMSG("TEE_SetOperationKey: %#" PRIx32, res);
+        goto out;
+    }
+
+    res = TEE_AsymmetricEncrypt(op, NULL, 0, inbuf, inbuf_len, outbuf,
+                                &outbuf_len);
+    if (res)
+    {
+        EMSG("TEE_AsymmetricEncrypt(%" PRId32 ", %" PRId32 "): %#" PRIx32, inbuf_len, params[1].memref.size, res);
+    }
+    params[1].memref.size = outbuf_len;
+
+out:
+    TEE_FreeOperation(op);
+    return res;
+}
+
+TEE_Result TA_CreateEntryPoint(void)
+{
+    /* Nothing to do */
+    return TEE_SUCCESS;
+}
+
 void TA_DestroyEntryPoint(void)
 {
-	DMSG("has been called");
+    /* Nothing to do */
 }
 
-/*
- * Called when a new session is opened to the TA. *sess_ctx can be updated
- * with a value to be able to identify this session in subsequent calls to the
- * TA. In this function you will normally do the global initialization for the
- * TA.
- */
-TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
-		TEE_Param __maybe_unused params[4],
-		void __maybe_unused **sess_ctx)
+TEE_Result TA_OpenSessionEntryPoint(uint32_t __unused param_types,
+                                    TEE_Param __unused params[4],
+                                    void **session)
 {
-	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE);
+    struct acipher *state;
 
-	DMSG("has been called");
+    /*
+     * Allocate and init state for the session.
+     */
+    state = TEE_Malloc(sizeof(*state), 0);
+    if (!state)
+        return TEE_ERROR_OUT_OF_MEMORY;
 
-	if (param_types != exp_param_types)
-		return TEE_ERROR_BAD_PARAMETERS;
+    state->key = TEE_HANDLE_NULL;
 
-	/* Unused parameters */
-	(void)&params;
-	(void)&sess_ctx;
-
-	/*
-	 * The DMSG() macro is non-standard, TEE Internal API doesn't
-	 * specify any means to logging from a TA.
-	 */
-	IMSG("Hello qc2335!\n");
-
-	/* If return value != TEE_SUCCESS the session will not be created. */
-	return TEE_SUCCESS;
-}
-
-/*
- * Called when a session is closed, sess_ctx hold the value that was
- * assigned by TA_OpenSessionEntryPoint().
- */
-void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
-{
-	(void)&sess_ctx; /* Unused parameter */
-	IMSG("Goodbye qc2335!\n");
-}
-
-static TEE_Result inc_value(uint32_t param_types,
-	TEE_Param params[4])
-{
-	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INOUT,
-						   TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE);
-
-	DMSG("has been called");
-
-	if (param_types != exp_param_types)
-		return TEE_ERROR_BAD_PARAMETERS;
-
-	IMSG("Got value: %u from NW", params[0].value.a);
-	params[0].value.a += 10;
-	IMSG("Increase value to: %u", params[0].value.a);
-
-	return TEE_SUCCESS;
-}
-
-static TEE_Result dec_value(uint32_t param_types,
-	TEE_Param params[4])
-{
-	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INOUT,
-						   TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE,
-						   TEE_PARAM_TYPE_NONE);
-
-	DMSG("has been called");
-
-	if (param_types != exp_param_types)
-		return TEE_ERROR_BAD_PARAMETERS;
-
-	IMSG("Got value: %u from NW", params[0].value.a);
-	params[0].value.a--;
-	IMSG("Decrease value to: %u", params[0].value.a);
-
-	return TEE_SUCCESS;
-}
-// put public key into TEE_Param params and send to host
-
-static TEE_Result get_public_key(uint32_t param_types, TEE_Param params[4])
-{
-    // Calculate total size of the public key (modulus + exponent)
-    uint32_t total_public_key_size = g_public_modulus_size + g_public_exponent_size;
-
-    // Check buffer size
-    if (params[0].memref.size < total_public_key_size) {
-        params[0].memref.size = total_public_key_size;
-        return TEE_ERROR_SHORT_BUFFER;
-    }
-
-    // Copy modulus and exponent to the buffer
-    TEE_MemMove(params[0].memref.buffer, g_public_modulus, g_public_modulus_size);
-    TEE_MemMove((uint8_t *)params[0].memref.buffer + g_public_modulus_size, g_public_exponent, g_public_exponent_size);
-
-    // Update the size to reflect the total size of the public key
-    params[0].memref.size = total_public_key_size;
+    *session = state;
 
     return TEE_SUCCESS;
 }
 
-
-/*
- * Called when a TA is invoked. sess_ctx hold that value that was
- * assigned by TA_OpenSessionEntryPoint(). The rest of the paramters
- * comes from normal world.
- */
-TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
-			uint32_t cmd_id,
-			uint32_t param_types, TEE_Param params[4])
+void TA_CloseSessionEntryPoint(void *session)
 {
-	(void)&sess_ctx; /* Unused parameter */
+    struct acipher *state = session;
 
-	switch (cmd_id) {
-	case TA_MY_TEST_CMD_INC_VALUE:
-		return inc_value(param_types, params);
-	case TA_MY_TEST_CMD_DEC_VALUE:
-		return dec_value(param_types, params);
-	case TA_MY_TEST_CMD_GET_PUBLIC_KEY:
-    	return get_public_key(param_types, params);
-	default:
-		return TEE_ERROR_BAD_PARAMETERS;
-	}
+    TEE_FreeTransientObject(state->key);
+    TEE_Free(state);
+}
+
+TEE_Result TA_InvokeCommandEntryPoint(void *session, uint32_t cmd,
+                                      uint32_t param_types,
+                                      TEE_Param params[TEE_NUM_PARAMS])
+{
+    switch (cmd)
+    {
+    case TA_ACIPHER_CMD_GEN_KEY:
+        return cmd_gen_key(session, param_types, params);
+    case TA_ACIPHER_CMD_ENCRYPT:
+        return cmd_enc(session, param_types, params);
+    default:
+        EMSG("Command ID %#" PRIx32 " is not supported", cmd);
+        return TEE_ERROR_NOT_SUPPORTED;
+    }
 }
