@@ -1,137 +1,164 @@
-/*
- * Copyright (c) 2016, Linaro Limited
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
-
+#include <stdio.h>
+#include <string.h>
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
-
 #include <my_test_ta.h>
+#define RSA_KEY_SIZE 1024
+#define MAX_PLAIN_LEN_1024 86 // (1024/8) - 42 (padding)
+#define RSA_CIPHER_LEN_1024 (RSA_KEY_SIZE / 8)
 
-struct acipher
+struct rsa_session
 {
-    TEE_ObjectHandle key;
+    TEE_OperationHandle op_handle; /* RSA operation */
+    TEE_ObjectHandle key_handle;   /* Key handle */
 };
 
-static TEE_Result cmd_gen_key(struct acipher *state, uint32_t pt,
-                              TEE_Param params[TEE_NUM_PARAMS])
+TEE_Result prepare_rsa_operation(TEE_OperationHandle *handle, uint32_t alg, TEE_OperationMode mode, TEE_ObjectHandle key)
 {
-    TEE_Result res;
-    uint32_t key_size;
-    TEE_ObjectHandle key;
-    const uint32_t key_type = TEE_TYPE_RSA_KEYPAIR;
-    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
-                                            TEE_PARAM_TYPE_NONE,
-                                            TEE_PARAM_TYPE_NONE,
-                                            TEE_PARAM_TYPE_NONE);
+    TEE_Result ret = TEE_SUCCESS;
+    TEE_ObjectInfo key_info;
+    ret = TEE_GetObjectInfo1(key, &key_info);
+    if (ret != TEE_SUCCESS)
+    {
+        EMSG("\nTEE_GetObjectInfo1: %#\n" PRIx32, ret);
+        return ret;
+    }
 
-    if (pt != exp_pt)
+    ret = TEE_AllocateOperation(handle, alg, mode, key_info.keySize);
+    if (ret != TEE_SUCCESS)
+    {
+        EMSG("\nFailed to alloc operation handle : 0x%x\n", ret);
+        return ret;
+    }
+    DMSG("\n========== Operation allocated successfully. ==========\n");
+
+    ret = TEE_SetOperationKey(*handle, key);
+    if (ret != TEE_SUCCESS)
+    {
+        EMSG("\nFailed to set key : 0x%x\n", ret);
+        return ret;
+    }
+    DMSG("\n========== Operation key already set. ==========\n");
+
+    return ret;
+}
+
+TEE_Result check_params(uint32_t param_types)
+{
+    const uint32_t exp_param_types =
+        TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                        TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                        TEE_PARAM_TYPE_NONE,
+                        TEE_PARAM_TYPE_NONE);
+
+    /* Safely get the invocation parameters */
+    if (param_types != exp_param_types)
         return TEE_ERROR_BAD_PARAMETERS;
-
-    key_size = params[0].value.a;
-
-    res = TEE_AllocateTransientObject(key_type, key_size, &key);
-    if (res)
-    {
-        EMSG("TEE_AllocateTransientObject(%#" PRIx32 ", %" PRId32 "): %#" PRIx32, key_type, key_size, res);
-        return res;
-    }
-
-    res = TEE_GenerateKey(key, key_size, NULL, 0);
-    if (res)
-    {
-        EMSG("TEE_GenerateKey(%" PRId32 "): %#" PRIx32,
-             key_size, res);
-        TEE_FreeTransientObject(key);
-        return res;
-    }
-
-    TEE_FreeTransientObject(state->key);
-    state->key = key;
     return TEE_SUCCESS;
 }
 
-static TEE_Result cmd_enc(struct acipher *state, uint32_t pt,
-                          TEE_Param params[TEE_NUM_PARAMS])
+TEE_Result RSA_create_key_pair(void *session)
 {
-    TEE_Result res;
-    const void *inbuf;
-    uint32_t inbuf_len;
-    void *outbuf;
-    uint32_t outbuf_len;
-    TEE_OperationHandle op;
-    TEE_ObjectInfo key_info;
-    const uint32_t alg = TEE_ALG_RSAES_PKCS1_V1_5;
-    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
-                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
-                                            TEE_PARAM_TYPE_NONE,
-                                            TEE_PARAM_TYPE_NONE);
+    TEE_Result ret;
+    size_t key_size = RSA_KEY_SIZE;
+    struct rsa_session *sess = (struct rsa_session *)session;
 
-    if (pt != exp_pt)
+    ret = TEE_AllocateTransientObject(TEE_TYPE_RSA_KEYPAIR, key_size, &sess->key_handle);
+    if (ret != TEE_SUCCESS)
+    {
+        EMSG("\nFailed to alloc transient object handle: 0x%x\n", ret);
+        return ret;
+    }
+    DMSG("\n========== Transient object allocated. ==========\n");
+
+    ret = TEE_GenerateKey(sess->key_handle, key_size, (TEE_Attribute *)NULL, 0);
+    if (ret != TEE_SUCCESS)
+    {
+        EMSG("\nGenerate key failure: 0x%x\n", ret);
+        return ret;
+    }
+    DMSG("\n========== Keys generated. ==========\n");
+    return ret;
+}
+
+TEE_Result RSA_encrypt(void *session, uint32_t param_types, TEE_Param params[4])
+{
+    TEE_Result ret;
+    uint32_t rsa_alg = TEE_ALG_RSAES_PKCS1_V1_5;
+    struct rsa_session *sess = (struct rsa_session *)session;
+
+    if (check_params(param_types) != TEE_SUCCESS)
         return TEE_ERROR_BAD_PARAMETERS;
-    if (!state->key)
-        return TEE_ERROR_BAD_STATE;
 
-    res = TEE_GetObjectInfo1(state->key, &key_info);
-    if (res)
+    void *plain_txt = params[0].memref.buffer;
+    size_t plain_len = params[0].memref.size;
+    void *cipher = params[1].memref.buffer;
+    size_t cipher_len = params[1].memref.size;
+
+    DMSG("\n========== Preparing encryption operation ==========\n");
+    ret = prepare_rsa_operation(&sess->op_handle, rsa_alg, TEE_MODE_ENCRYPT, sess->key_handle);
+    if (ret != TEE_SUCCESS)
     {
-        EMSG("TEE_GetObjectInfo1: %#" PRIx32, res);
-        return res;
+        EMSG("\nFailed to prepare RSA operation: 0x%x\n", ret);
+        goto err;
     }
 
-    inbuf = params[0].memref.buffer;
-    inbuf_len = params[0].memref.size;
-    outbuf = params[1].memref.buffer;
-    outbuf_len = params[1].memref.size;
-
-    res = TEE_AllocateOperation(&op, alg, TEE_MODE_ENCRYPT,
-                                key_info.keySize);
-    if (res)
+    DMSG("\nData to encrypt: %s\n", (char *)plain_txt);
+    ret = TEE_AsymmetricEncrypt(sess->op_handle, (TEE_Attribute *)NULL, 0,
+                                plain_txt, plain_len, cipher, &cipher_len);
+    if (ret != TEE_SUCCESS)
     {
-        EMSG("TEE_AllocateOperation(TEE_MODE_ENCRYPT, %#" PRIx32 ", %" PRId32 "): %#" PRIx32, alg, key_info.keySize, res);
-        return res;
+        EMSG("\nFailed to encrypt the passed buffer: 0x%x\n", ret);
+        goto err;
+    }
+    DMSG("\nEncrypted data: %s\n", (char *)cipher);
+    DMSG("\n========== Encryption successfully ==========\n");
+    return ret;
+
+err:
+    TEE_FreeOperation(sess->op_handle);
+    TEE_FreeOperation(sess->key_handle);
+    return ret;
+}
+
+TEE_Result RSA_decrypt(void *session, uint32_t param_types, TEE_Param params[4])
+{
+    TEE_Result ret;
+    uint32_t rsa_alg = TEE_ALG_RSAES_PKCS1_V1_5;
+    struct rsa_session *sess = (struct rsa_session *)session;
+
+    if (check_params(param_types) != TEE_SUCCESS)
+        return TEE_ERROR_BAD_PARAMETERS;
+
+    void *plain_txt = params[1].memref.buffer;
+    size_t plain_len = params[1].memref.size;
+    void *cipher = params[0].memref.buffer;
+    size_t cipher_len = params[0].memref.size;
+
+    DMSG("\n========== Preparing decryption operation ==========\n");
+    ret = prepare_rsa_operation(&sess->op_handle, rsa_alg, TEE_MODE_DECRYPT, sess->key_handle);
+    if (ret != TEE_SUCCESS)
+    {
+        EMSG("\nFailed to prepare RSA operation: 0x%x\n", ret);
+        goto err;
     }
 
-    res = TEE_SetOperationKey(op, state->key);
-    if (res)
+    DMSG("\nData to decrypt: %s\n", (char *)cipher);
+    ret = TEE_AsymmetricDecrypt(sess->op_handle, (TEE_Attribute *)NULL, 0,
+                                cipher, cipher_len, plain_txt, &plain_len);
+    if (ret != TEE_SUCCESS)
     {
-        EMSG("TEE_SetOperationKey: %#" PRIx32, res);
-        goto out;
+        EMSG("\nFailed to decrypt the passed buffer: 0x%x\n", ret);
+        goto err;
     }
+    DMSG("\nDecrypted data: %s\n", (char *)plain_txt);
+    DMSG("\n========== Decryption successfully ==========\n");
+    return ret;
 
-    res = TEE_AsymmetricEncrypt(op, NULL, 0, inbuf, inbuf_len, outbuf,
-                                &outbuf_len);
-    if (res)
-    {
-        EMSG("TEE_AsymmetricEncrypt(%" PRId32 ", %" PRId32 "): %#" PRIx32, inbuf_len, params[1].memref.size, res);
-    }
-    params[1].memref.size = outbuf_len;
-
-out:
-    TEE_FreeOperation(op);
-    return res;
+err:
+    TEE_FreeOperation(sess->op_handle);
+    TEE_FreeTransientObject(sess->key_handle);
+    return ret;
 }
 
 TEE_Result TA_CreateEntryPoint(void)
@@ -147,44 +174,54 @@ void TA_DestroyEntryPoint(void)
 
 TEE_Result TA_OpenSessionEntryPoint(uint32_t __unused param_types,
                                     TEE_Param __unused params[4],
-                                    void **session)
+                                    void __unused **session)
 {
-    struct acipher *state;
-
-    /*
-     * Allocate and init state for the session.
-     */
-    state = TEE_Malloc(sizeof(*state), 0);
-    if (!state)
+    struct rsa_session *sess;
+    sess = TEE_Malloc(sizeof(*sess), 0);
+    if (!sess)
         return TEE_ERROR_OUT_OF_MEMORY;
 
-    state->key = TEE_HANDLE_NULL;
+    sess->key_handle = TEE_HANDLE_NULL;
+    sess->op_handle = TEE_HANDLE_NULL;
 
-    *session = state;
+    *session = (void *)sess;
+    DMSG("\nSession %p: newly allocated\n", *session);
 
     return TEE_SUCCESS;
 }
 
 void TA_CloseSessionEntryPoint(void *session)
 {
-    struct acipher *state = session;
+    struct rsa_session *sess;
 
-    TEE_FreeTransientObject(state->key);
-    TEE_Free(state);
+    /* Get ciphering context from session ID */
+    DMSG("Session %p: release session", session);
+    sess = (struct rsa_session *)session;
+
+    /* Release the session resources
+       These tests are mandatories to avoid PANIC TA (TEE_HANDLE_NULL) */
+    if (sess->key_handle != TEE_HANDLE_NULL)
+        TEE_FreeTransientObject(sess->key_handle);
+    if (sess->op_handle != TEE_HANDLE_NULL)
+        TEE_FreeOperation(sess->op_handle);
+    TEE_Free(sess);
 }
 
-TEE_Result TA_InvokeCommandEntryPoint(void *session, uint32_t cmd,
+TEE_Result TA_InvokeCommandEntryPoint(void *session,
+                                      uint32_t cmd,
                                       uint32_t param_types,
-                                      TEE_Param params[TEE_NUM_PARAMS])
+                                      TEE_Param params[4])
 {
     switch (cmd)
     {
-    case TA_ACIPHER_CMD_GEN_KEY:
-        return cmd_gen_key(session, param_types, params);
-    case TA_ACIPHER_CMD_ENCRYPT:
-        return cmd_enc(session, param_types, params);
+    case TA_RSA_CMD_GENKEYS:
+        return RSA_create_key_pair(session);
+    case TA_RSA_CMD_ENCRYPT:
+        return RSA_encrypt(session, param_types, params);
+    case TA_RSA_CMD_DECRYPT:
+        return RSA_decrypt(session, param_types, params);
     default:
-        EMSG("Command ID %#" PRIx32 " is not supported", cmd);
+        EMSG("Command ID 0x%x is not supported", cmd);
         return TEE_ERROR_NOT_SUPPORTED;
     }
 }

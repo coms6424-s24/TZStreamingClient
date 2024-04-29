@@ -13,15 +13,8 @@
         }                                                  \
     }
 
-/*
- * in	params[0].value.a key size
- */
-#define TA_ACIPHER_CMD_GEN_KEY 0
-
-/*
- * in	params[1].memref  input
- * out	params[2].memref  output
- */
-#define TA_ACIPHER_CMD_ENCRYPT 1
+#define TA_RSA_CMD_GENKEYS 0
+#define TA_RSA_CMD_ENCRYPT 1
+#define TA_RSA_CMD_DECRYPT 2
 
 #endif /*TA_MY_TEST_H*/

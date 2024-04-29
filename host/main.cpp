@@ -12,87 +12,109 @@
 #include "my_test_ta.h" //#include <my_test_ta.h>
 #include "include/client.h"
 
-TEEC_Result res;
-uint32_t eo;
-TEEC_Context ctx;
-TEEC_Session sess;
-const TEEC_UUID uuid = TA_MY_TEST_UUID;
-TEEC_Operation op;
+#define RSA_KEY_SIZE 1024
+#define RSA_MAX_PLAIN_LEN_1024 (RSA_KEY_SIZE / 8) - 42
+#define RSA_CIPHER_LEN_1024 (RSA_KEY_SIZE / 8)
 
-const size_t key_size = 2048;
-void *inbuf;
-size_t inbuf_len;
-
-static void teec_err(TEEC_Result res, uint32_t eo, const char *str)
+struct tee_attrs
 {
-    errx(1, "%s: %#" PRIx32 " (error origin %#" PRIx32 ")", str, res, eo);
+    TEEC_Context ctx;
+    TEEC_Session sess;
+};
+
+void init_tee_session(struct tee_attrs *ta)
+{
+    TEEC_UUID uuid = TA_MY_TEST_UUID;
+    uint32_t origin;
+    TEEC_Result res;
+
+    /* Initialize a context connecting us to the TEE */
+    res = TEEC_InitializeContext(NULL, &ta->ctx);
+    if (res != TEEC_SUCCESS)
+        errx(1, "\nTEEC_InitializeContext failed with code 0x%x\n", res);
+
+    /* Open a session with the TA */
+    res = TEEC_OpenSession(&ta->ctx, &ta->sess, &uuid,
+                           TEEC_LOGIN_PUBLIC, NULL, NULL, &origin);
+    if (res != TEEC_SUCCESS)
+        errx(1, "\nTEEC_Opensession failed with code 0x%x origin 0x%x\n", res, origin);
 }
 
-void TEE_get_key()
+void terminate_tee_session(struct tee_attrs *ta)
 {
-    memset(&op, 0, sizeof(op));
-    op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_INPUT, TEEC_NONE,
-                                     TEEC_NONE, TEEC_NONE);
-    op.params[0].value.a = key_size;
-
-    res = TEEC_InvokeCommand(&sess, TA_ACIPHER_CMD_GEN_KEY, &op, &eo);
-    if (res)
-        teec_err(res, eo, "TEEC_InvokeCommand(TA_ACIPHER_CMD_GEN_KEY)");
+    TEEC_CloseSession(&ta->sess);
+    TEEC_FinalizeContext(&ta->ctx);
 }
 
-void TEE_encrypt()
+void prepare_op(TEEC_Operation *op, char *in, size_t in_sz, char *out, size_t out_sz)
 {
-    memset(&op, 0, sizeof(op));
-    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
-                                     TEEC_MEMREF_TEMP_OUTPUT,
-                                     TEEC_NONE, TEEC_NONE);
-    op.params[0].tmpref.buffer = inbuf;
-    op.params[0].tmpref.size = inbuf_len;
+    memset(op, 0, sizeof(*op));
 
-    res = TEEC_InvokeCommand(&sess, TA_ACIPHER_CMD_ENCRYPT, &op, &eo);
-    if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER)
-        teec_err(res, eo, "TEEC_InvokeCommand(TA_ACIPHER_CMD_ENCRYPT)");
-
-    op.params[1].tmpref.buffer = malloc(op.params[1].tmpref.size);
-    if (!op.params[1].tmpref.buffer)
-        err(1, "Cannot allocate out buffer of size %zu",
-            op.params[1].tmpref.size);
-
-    res = TEEC_InvokeCommand(&sess, TA_ACIPHER_CMD_ENCRYPT, &op, &eo);
-    if (res)
-        teec_err(res, eo, "TEEC_InvokeCommand(TA_ACIPHER_CMD_ENCRYPT)");
-
-    printf("Encrypted buffer: ");
-    for (size_t n = 0; n < op.params[1].tmpref.size; n++)
-        printf("%02x ", ((uint8_t *)op.params[1].tmpref.buffer)[n]);
-    printf("\n");
+    op->paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                      TEEC_MEMREF_TEMP_OUTPUT,
+                                      TEEC_NONE, TEEC_NONE);
+    op->params[0].tmpref.buffer = in;
+    op->params[0].tmpref.size = in_sz;
+    op->params[1].tmpref.buffer = out;
+    op->params[1].tmpref.size = out_sz;
 }
 
-int main(void)
+void rsa_gen_keys(struct tee_attrs *ta)
 {
-    // TEE init
-    res = TEEC_InitializeContext(NULL, &ctx);
-    if (res)
-        errx(1, "TEEC_InitializeContext(NULL, x): %#" PRIx32, res);
+    TEEC_Result res;
 
-    res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL,
-                           NULL, &eo);
-    if (res)
-        teec_err(res, eo, "TEEC_OpenSession(TEEC_LOGIN_PUBLIC)");
+    res = TEEC_InvokeCommand(&ta->sess, TA_RSA_CMD_GENKEYS, NULL, NULL);
+    if (res != TEEC_SUCCESS)
+        errx(1, "\nTEEC_InvokeCommand(TA_RSA_CMD_GENKEYS) failed %#x\n", res);
+    printf("\n=========== Keys already generated. ==========\n");
+}
 
-    TEE_get_key();
-    inbuf = (void *)"12121212121212121212121212121212121212121212121212121212";
-    inbuf_len = strlen((char *)inbuf);
-    TEE_encrypt();
+void rsa_encrypt(struct tee_attrs *ta, char *in, size_t in_sz, char *out, size_t out_sz)
+{
+    TEEC_Operation op;
+    uint32_t origin;
+    TEEC_Result res;
+    printf("\n============ RSA ENCRYPT CA SIDE ============\n");
+    prepare_op(&op, in, in_sz, out, out_sz);
 
-    if (open_connection())
-    {
-        receive_frame();
-    }
+    res = TEEC_InvokeCommand(&ta->sess, TA_RSA_CMD_ENCRYPT,
+                             &op, &origin);
+    if (res != TEEC_SUCCESS)
+        errx(1, "\nTEEC_InvokeCommand(TA_RSA_CMD_ENCRYPT) failed 0x%x origin 0x%x\n",
+             res, origin);
+    printf("\nThe text sent was encrypted: %s\n", out);
+}
 
-    TEEC_CloseSession(&sess);
+void rsa_decrypt(struct tee_attrs *ta, char *in, size_t in_sz, char *out, size_t out_sz)
+{
+    TEEC_Operation op;
+    uint32_t origin;
+    TEEC_Result res;
+    printf("\n============ RSA DECRYPT CA SIDE ============\n");
+    prepare_op(&op, in, in_sz, out, out_sz);
 
-    TEEC_FinalizeContext(&ctx);
+    res = TEEC_InvokeCommand(&ta->sess, TA_RSA_CMD_DECRYPT, &op, &origin);
+    if (res != TEEC_SUCCESS)
+        errx(1, "\nTEEC_InvokeCommand(TA_RSA_CMD_DECRYPT) failed 0x%x origin 0x%x\n",
+             res, origin);
+    printf("\nThe text sent was decrypted: %s\n", (char *)op.params[1].tmpref.buffer);
+}
 
+int main(int argc, char *argv[])
+{
+    struct tee_attrs ta;
+    char clear[RSA_MAX_PLAIN_LEN_1024];
+    char ciph[RSA_CIPHER_LEN_1024];
+
+    init_tee_session(&ta);
+    printf("\nType something to be encrypted and decrypted in the TA:\n");
+    fflush(stdin);
+    fgets(clear, sizeof(clear), stdin);
+
+    rsa_gen_keys(&ta);
+    rsa_encrypt(&ta, clear, RSA_MAX_PLAIN_LEN_1024, ciph, RSA_CIPHER_LEN_1024);
+    rsa_decrypt(&ta, ciph, RSA_CIPHER_LEN_1024, clear, RSA_MAX_PLAIN_LEN_1024);
+
+    terminate_tee_session(&ta);
     return 0;
 }
