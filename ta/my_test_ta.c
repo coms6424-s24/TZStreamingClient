@@ -81,9 +81,61 @@ TEE_Result RSA_create_key_pair(void *session)
     return ret;
 }
 
+TEE_Result RSA_get_public_key_exponent_modulus(void *session, uint32_t param_types, TEE_Param params[4])
+{
+    DMSG("\n========== Get Pub Key ==========\n");
+    struct rsa_session *sess = (struct rsa_session *)session;
+
+    TEE_Result result = TEE_SUCCESS;
+    TEE_ObjectHandle rsa_keypair = sess->key_handle;
+
+    uint8_t *buffer1;
+    uint32_t buffer_len1 = 0;
+
+    uint8_t *buffer2;
+    uint32_t buffer_len2 = 0;
+
+    uint32_t exp_param_types = TEE_PARAM_TYPES(
+        TEE_PARAM_TYPE_MEMREF_OUTPUT,
+        TEE_PARAM_TYPE_MEMREF_OUTPUT,
+        TEE_PARAM_TYPE_NONE,
+        TEE_PARAM_TYPE_NONE);
+
+    if (param_types != exp_param_types)
+        return TEE_ERROR_BAD_PARAMETERS;
+
+    buffer1 = params[0].memref.buffer;
+    buffer2 = params[1].memref.buffer;
+
+    buffer_len1 = params[0].memref.size;
+    buffer_len2 = params[1].memref.size;
+
+    /*get the exponent value, as an octet string */
+    result = TEE_GetObjectBufferAttribute(rsa_keypair, TEE_ATTR_RSA_PUBLIC_EXPONENT, buffer1, &buffer_len1);
+    if (result != TEE_SUCCESS)
+    {
+        EMSG("Failed to get object buffer attribute. TEE_GetObjectBufferAttribute res: 0x%x", result);
+    }
+
+    /*get the modulus value, as an octet string */
+    result = TEE_GetObjectBufferAttribute(rsa_keypair, TEE_ATTR_RSA_MODULUS, buffer2, &buffer_len2);
+    if (result != TEE_SUCCESS)
+    {
+        EMSG("Failed to get object buffer attribute. TEE_GetObjectBufferAttribute res: 0x%x", result);
+    }
+
+    DMSG("\nGet Public Key Exponent: %s\n", buffer1);
+    DMSG("\nGet Public Key Modulus: %s\n", buffer2);
+
+    params[0].memref.size = buffer_len1;
+    params[1].memref.size = buffer_len2;
+
+    return result;
+}
+
 TEE_Result Get_Pub_key(void *session, uint32_t param_types, TEE_Param params[4])
 {
-    DMSG("\n========== test1. ==========\n");
+    DMSG("\n========== Get Pub Key ==========\n");
     struct rsa_session *sess = (struct rsa_session *)session;
 
     TEE_BigInt *out_param_exponent = (TEE_BigInt *)params[0].memref.buffer;
@@ -108,18 +160,14 @@ TEE_Result Get_Pub_key(void *session, uint32_t param_types, TEE_Param params[4])
 
     if (param_types != exp_param_types)
         return TEE_ERROR_BAD_PARAMETERS;
-    DMSG("\n========== test2. ==========\n");
     /* initialize the BigInt structure */
     bigInt_len = TEE_BigIntSizeInU32(key_size);
     DMSG("\n========== test2.1 ==========\n");
     bigIntExp = (TEE_BigInt *)TEE_Malloc(bigInt_len * sizeof(TEE_BigInt), TEE_MALLOC_FILL_ZERO);
     DMSG("\n========== test2.2 ==========\n");
     TEE_BigIntInit(bigIntExp, key_size);
-    DMSG("\n========== test2.3 ==========\n");
     bigIntMod = (TEE_BigInt *)TEE_Malloc(bigInt_len * sizeof(TEE_BigInt), TEE_MALLOC_FILL_ZERO);
-    DMSG("\n========== test2.4 ==========\n");
     TEE_BigIntInit(bigIntMod, key_size);
-    DMSG("\n========== test3. ==========\n");
     /* get the public value, as an octet string */
     bufferlen = sizeof(buffer);
     res = TEE_GetObjectBufferAttribute(sess->key_handle, TEE_ATTR_RSA_PUBLIC_EXPONENT, buffer, &bufferlen);
@@ -296,7 +344,8 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session,
     case TA_RSA_CMD_DECRYPT:
         return RSA_decrypt(session, param_types, params);
     case TA_RSA_CMD_GET_PUB_KEY:
-        return Get_Pub_key(session, param_types, params);
+        // return Get_Pub_key(session, param_types, params);
+        return RSA_get_public_key_exponent_modulus(session, param_types, params);
     default:
         EMSG("Command ID 0x%x is not supported", cmd);
         return TEE_ERROR_NOT_SUPPORTED;

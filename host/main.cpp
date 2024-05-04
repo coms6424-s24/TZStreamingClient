@@ -15,6 +15,7 @@
 #define RSA_KEY_SIZE 1024
 #define RSA_MAX_PLAIN_LEN_1024 (RSA_KEY_SIZE / 8) - 42
 #define RSA_CIPHER_LEN_1024 (RSA_KEY_SIZE / 8)
+#define BigIntSizeInU32(n) ((((n) + 31) / 32) + 2)
 
 struct tee_attrs
 {
