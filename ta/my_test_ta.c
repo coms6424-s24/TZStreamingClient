@@ -81,6 +81,81 @@ TEE_Result RSA_create_key_pair(void *session)
     return ret;
 }
 
+TEE_Result Get_Pub_key(void *session, uint32_t param_types, TEE_Param params[4])
+{
+    DMSG("\n========== test1. ==========\n");
+    struct rsa_session *sess = (struct rsa_session *)session;
+
+    TEE_BigInt *out_param_exponent = (TEE_BigInt *)params[0].memref.buffer;
+    TEE_BigInt *out_param_modulus = (TEE_BigInt *)params[1].memref.buffer;
+    size_t key_size = RSA_KEY_SIZE;
+    size_t bigInt_len;
+    TEE_BigInt *bigIntExp;
+    TEE_BigInt *bigIntMod;
+    uint8_t buffer[RSA_KEY_SIZE] = {0};
+    uint8_t mod[RSA_KEY_SIZE] = {0};
+    uint32_t bufferlen;
+    uint32_t rsa_alg = TEE_ALG_RSAES_PKCS1_V1_5;
+    TEE_ObjectInfo info;
+    uint32_t modlen;
+    uint32_t res;
+    TEE_OperationHandle handle = (TEE_OperationHandle)NULL;
+
+    uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                               TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                               TEE_PARAM_TYPE_NONE,
+                                               TEE_PARAM_TYPE_NONE);
+
+    if (param_types != exp_param_types)
+        return TEE_ERROR_BAD_PARAMETERS;
+    DMSG("\n========== test2. ==========\n");
+    /* initialize the BigInt structure */
+    bigInt_len = TEE_BigIntSizeInU32(key_size);
+    DMSG("\n========== test2.1 ==========\n");
+    bigIntExp = (TEE_BigInt *)TEE_Malloc(bigInt_len * sizeof(TEE_BigInt), TEE_MALLOC_FILL_ZERO);
+    DMSG("\n========== test2.2 ==========\n");
+    TEE_BigIntInit(bigIntExp, key_size);
+    DMSG("\n========== test2.3 ==========\n");
+    bigIntMod = (TEE_BigInt *)TEE_Malloc(bigInt_len * sizeof(TEE_BigInt), TEE_MALLOC_FILL_ZERO);
+    DMSG("\n========== test2.4 ==========\n");
+    TEE_BigIntInit(bigIntMod, key_size);
+    DMSG("\n========== test3. ==========\n");
+    /* get the public value, as an octet string */
+    bufferlen = sizeof(buffer);
+    res = TEE_GetObjectBufferAttribute(sess->key_handle, TEE_ATTR_RSA_PUBLIC_EXPONENT, buffer, &bufferlen);
+    if (res != TEE_SUCCESS)
+    {
+        DMSG("TEE_GetObjectBufferAttribute failed!TEE_GetObjectBufferAttribute res: 0x%x", res);
+    }
+    modlen = sizeof(mod);
+    res = TEE_GetObjectBufferAttribute(sess->key_handle, TEE_ATTR_RSA_MODULUS, mod, &modlen);
+    if (res != TEE_SUCCESS)
+    {
+        DMSG("TEE_GetObjectBufferAttribute (Modulus) failed!TEE_GetObjectBufferAttribute res: 0x%x", res);
+    }
+
+    /* convert the octet string to a BigInt */
+    res = TEE_BigIntConvertFromOctetString(bigIntExp, buffer, bufferlen, 0);
+    if (res != TEE_SUCCESS)
+    {
+        DMSG("TEE_BigIntConvertFromOctetString failed!TEE_BigIntConvertFromOctetString res: 0x%x", res);
+    }
+
+    res = TEE_BigIntConvertFromOctetString(bigIntMod, mod, modlen, 0);
+    if (res != TEE_SUCCESS)
+    {
+        DMSG("TEE_BigIntConvertFromOctetString failed!TEE_BigIntConvertFromOctetString res: 0x%x", res);
+    }
+    DMSG("\n========== test4. ==========\n");
+    memcpy(out_param_exponent, bigIntExp, (bigInt_len * sizeof(TEE_BigInt)));
+    memcpy(out_param_modulus, bigIntMod, (bigInt_len * sizeof(TEE_BigInt)));
+
+    TEE_Free(bigIntExp);
+    TEE_Free(bigIntMod);
+    DMSG("\n========== test5. ==========\n");
+    return TEE_SUCCESS;
+}
+
 TEE_Result RSA_encrypt(void *session, uint32_t param_types, TEE_Param params[4])
 {
     TEE_Result ret;
@@ -220,6 +295,8 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session,
         return RSA_encrypt(session, param_types, params);
     case TA_RSA_CMD_DECRYPT:
         return RSA_decrypt(session, param_types, params);
+    case TA_RSA_CMD_GET_PUB_KEY:
+        return Get_Pub_key(session, param_types, params);
     default:
         EMSG("Command ID 0x%x is not supported", cmd);
         return TEE_ERROR_NOT_SUPPORTED;

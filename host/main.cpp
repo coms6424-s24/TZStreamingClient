@@ -59,6 +59,19 @@ void prepare_op(TEEC_Operation *op, char *in, size_t in_sz, char *out, size_t ou
     op->params[1].tmpref.size = out_sz;
 }
 
+void prepare_op_out_out(TEEC_Operation *op, char *out1, size_t out1_sz, char *out2, size_t out2_sz)
+{
+    memset(op, 0, sizeof(*op));
+
+    op->paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_OUTPUT,
+                                      TEEC_MEMREF_TEMP_OUTPUT,
+                                      TEEC_NONE, TEEC_NONE);
+    op->params[0].tmpref.buffer = out1;
+    op->params[0].tmpref.size = out1_sz;
+    op->params[1].tmpref.buffer = out2;
+    op->params[1].tmpref.size = out2_sz;
+}
+
 void rsa_gen_keys(struct tee_attrs *ta)
 {
     TEEC_Result res;
@@ -100,6 +113,24 @@ void rsa_decrypt(struct tee_attrs *ta, char *in, size_t in_sz, char *out, size_t
     printf("\nThe text sent was decrypted: %s\n", (char *)op.params[1].tmpref.buffer);
 }
 
+void rsa_get_pub_key(struct tee_attrs *ta)
+{
+    TEEC_Operation op;
+    uint32_t origin;
+    TEEC_Result res;
+
+    char exp[RSA_KEY_SIZE];
+    char mod[RSA_KEY_SIZE];
+
+    prepare_op_out_out(&op, exp, RSA_KEY_SIZE, mod, RSA_KEY_SIZE);
+
+    res = TEEC_InvokeCommand(&ta->sess, TA_RSA_CMD_GET_PUB_KEY, &op, &origin);
+    if (res != TEEC_SUCCESS)
+        errx(1, "\nTEEC_InvokeCommand(TA_RSA_CMD_GET_PUB_KEY) failed 0x%x origin 0x%x\n",
+             res, origin);
+    printf("\nPublic key: \nExponent: %s\nModulus: %s\n", exp, mod);
+}
+
 int main(int argc, char *argv[])
 {
     struct tee_attrs ta;
@@ -112,6 +143,7 @@ int main(int argc, char *argv[])
     fgets(clear, sizeof(clear), stdin);
 
     rsa_gen_keys(&ta);
+    rsa_get_pub_key(&ta);
     rsa_encrypt(&ta, clear, RSA_MAX_PLAIN_LEN_1024, ciph, RSA_CIPHER_LEN_1024);
     rsa_decrypt(&ta, ciph, RSA_CIPHER_LEN_1024, clear, RSA_MAX_PLAIN_LEN_1024);
 

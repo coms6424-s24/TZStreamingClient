@@ -16,5 +16,6 @@
 #define TA_RSA_CMD_GENKEYS 0
 #define TA_RSA_CMD_ENCRYPT 1
 #define TA_RSA_CMD_DECRYPT 2
+#define TA_RSA_CMD_GET_PUB_KEY 3
 
 #endif /*TA_MY_TEST_H*/
