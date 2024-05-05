@@ -10,6 +10,25 @@ frame_rate = 1  # fps
 video_file = "big_buck_bunny_240p_30mb.mp4"
 
 
+class rsa_pub_key:
+    def __init__(self):
+        self.valid = False
+
+    def is_valid():
+        return self.valid
+
+    def set_key(self, e, n):
+        self.e = e
+        self.n = n
+        self.valid = True
+
+    def get_key(self):
+        return self.e, self.n
+
+    def encrypt(self, data):
+        return pow(data, self.e, self.n)
+
+
 class Server:
 
     def __init__(self) -> None:
@@ -30,24 +49,43 @@ class Server:
         while True:
             client_socket, client_address = self.server_socket.accept()
             print(f"[*] Accepted connection from {client_address}")
-            if client_address[1] == 9998:  # TA port is 9998
-                pass
-            else:  # RA port is random
-                self.client_socket_list.append((client_socket, client_address[0]))
+            self.client_socket_list.append(
+                (client_socket, client_address[0], rsa_pub_key())
+            )
+            # launch a key exchange thread
+            thread2 = threading.Thread(
+                target=self.key_exchange,
+                args=(
+                    client_address[0],
+                    client_socket,
+                ),
+            )
+            thread2.start()
 
-    def key_exchange(self):  # thread2
+    def key_exchange(self, client_address, client_socket):  # thread2
+        print("wait for public key...")
         received_data = b""
-        while True:
-            received_data, client_address = self.server_socket.recvfrom(4096)
-            if client_address[1] == 9998:  # TA port
-                pass
-                #public_key = pickle.loads(received_data)
-                # send server public key to TA
-                # self.server_socket.sendto(
-                #     pickle.dumps(self.server_key.PublicKey()), client_address
-                # )
-                # compute shared key
-                # self.server_key.compute_shared_key(client_address[0], public_key)
+        received_data = client_socket.recv(4096)
+        print("received data: ", received_data)
+        print("received data length: ", len(received_data))
+        # get length
+        len_e = int.from_bytes(received_data[0:4], "little")
+        len_n = int.from_bytes(received_data[4:8], "little")
+        # get e and n
+        e = received_data[8 : 8 + len_e]
+        n = int.from_bytes(received_data[8 + len_e : 8 + len_e + len_n], "little")
+        # print
+        print("len_e: ", len_e)
+        for i in e:
+            print(hex(i), end=":")
+        print()
+        print("len_n: ", len_n)
+        print("n: ", n)
+        # load into client record
+        for client_socket_t, address, rsa_key in self.client_socket_list:
+            if address == client_address[0]:
+                rsa_key.set_key(e, n)
+                break
 
     def stream_video(self, video_file, frame_rate):  # thread3
         video_capture = cv2.VideoCapture(video_file)
@@ -55,16 +93,10 @@ class Server:
             ret, frame = video_capture.read()
             # serialize the frame
             serialized_frame = cv2.imencode(".jpg", frame)[1].tobytes()
-            print(len(serialized_frame),"bytes of data")
-            for client_socket, client_address in self.client_socket_list:
-                client_socket.sendall(serialized_frame)
-            
-                # if self.server_key.has_shared_key(client_address):
-                #     encrypted_frame = self.server_key.encrypt(
-                #         client_address, serialized_frame
-                #     )
-                #     message_size = struct.pack("L", len(encrypted_frame))
-                #     client_socket.sendall(message_size + encrypted_frame)
+            print(len(serialized_frame), "bytes of data")
+            for client_socket, client_address, rsa_key in self.client_socket_list:
+                if rsa_key.is_valid():
+                    client_socket.sendall(serialized_frame)
 
             cv2.imshow("Server Video", frame)
             cv2.waitKey(int(1000 / frame_rate))
@@ -80,8 +112,6 @@ class Server:
 my_server = Server()
 # launch threads
 thread1 = threading.Thread(target=my_server.accept_client)
-thread2 = threading.Thread(target=my_server.key_exchange)
-thread3 = threading.Thread(target=my_server.stream_video, args=(video_file, frame_rate))
+# thread3 = threading.Thread(target=my_server.stream_video, args=(video_file, frame_rate))
 thread1.start()
-#thread2.start()
-thread3.start()
+# thread3.start()

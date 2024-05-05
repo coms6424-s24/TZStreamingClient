@@ -22,7 +22,6 @@ char *buffer;
 
 int open_connection()
 {
-    printf("Opening connection...\n");
     // Create a socket client
     client_socket = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in server_address;
@@ -60,6 +59,22 @@ int receive_frame()
         // cv::waitKey(25);
     }
     return 1;
+}
+
+void send_pub_key(void *modulus, int mod_len, void *exponent, int exp_len)
+{
+    // combine into one message
+    char *msg = new char[mod_len + exp_len + 10];
+    // endianess unsolved!!!!!
+    memcpy(msg, &mod_len, 4);
+    memcpy(msg + 4, &exp_len, 4);
+    memcpy(msg + 8, modulus, mod_len);
+    memcpy(msg + 8 + mod_len, exponent, exp_len);
+    printf("send msg: %s\n", msg);
+    if (send(client_socket, msg, mod_len + exp_len + 8, 0) != -1)
+    {
+        printf("Public key sent to server.\n");
+    }
 }
 
 void test()
