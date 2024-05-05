@@ -14,7 +14,7 @@ class rsa_pub_key:
     def __init__(self):
         self.valid = False
 
-    def is_valid():
+    def is_valid(self):
         return self.valid
 
     def set_key(self, e, n):
@@ -26,7 +26,17 @@ class rsa_pub_key:
         return self.e, self.n
 
     def encrypt(self, data):
-        return pow(data, self.e, self.n)
+        # RSA key size is 1024 bits = 128 bytes
+        # devide data into chunks and encrypt each chunk
+        encrypted_data = b""
+        chunk_size = 128
+        # zero padding
+        data += b"\x00" * (chunk_size - len(data) % chunk_size)
+        for i in range(0, len(data), chunk_size):
+            chunk = data[i : i + chunk_size]
+            encrypted_chunk = pow(int.from_bytes(chunk, "little"), self.e, self.n)
+            encrypted_data += encrypted_chunk.to_bytes(128, "little")
+        return encrypted_data
 
 
 class Server:
@@ -62,8 +72,8 @@ class Server:
             )
             thread2.start()
 
-    def key_exchange(self, client_address, client_socket):  # thread2
-        print("wait for public key...")
+    def key_exchange(self, client_IP, client_socket):  # thread2
+
         received_data = b""
         received_data = client_socket.recv(4096)
         print("received data: ", received_data)
@@ -72,19 +82,23 @@ class Server:
         len_e = int.from_bytes(received_data[0:4], "little")
         len_n = int.from_bytes(received_data[4:8], "little")
         # get e and n
-        e = received_data[8 : 8 + len_e]
+        e = int.from_bytes(
+            received_data[8 : 8 + len_e], "little"
+        )  # received_data[8 : 8 + len_e]
         n = int.from_bytes(received_data[8 + len_e : 8 + len_e + len_n], "little")
         # print
         print("len_e: ", len_e)
-        for i in e:
-            print(hex(i), end=":")
-        print()
+        # for i in e:
+        #     print(hex(i), end=":")
+        # print()
+        print("e: ", e)
         print("len_n: ", len_n)
         print("n: ", n)
         # load into client record
         for client_socket_t, address, rsa_key in self.client_socket_list:
-            if address == client_address[0]:
+            if address == client_IP:
                 rsa_key.set_key(e, n)
+                print("Public key set for ", client_IP)
                 break
 
     def stream_video(self, video_file, frame_rate):  # thread3
@@ -93,10 +107,14 @@ class Server:
             ret, frame = video_capture.read()
             # serialize the frame
             serialized_frame = cv2.imencode(".jpg", frame)[1].tobytes()
+            serialized_frame = ("0123456789" * 1000).encode()
             print(len(serialized_frame), "bytes of data")
             for client_socket, client_address, rsa_key in self.client_socket_list:
                 if rsa_key.is_valid():
-                    client_socket.sendall(serialized_frame)
+                    # encode using rsa public key
+                    encrypted_frame = rsa_key.encrypt(serialized_frame)
+                    print(len(encrypted_frame), "bytes of encrypted data")
+                    # client_socket.sendall(serialized_frame)
 
             cv2.imshow("Server Video", frame)
             cv2.waitKey(int(1000 / frame_rate))
@@ -112,6 +130,6 @@ class Server:
 my_server = Server()
 # launch threads
 thread1 = threading.Thread(target=my_server.accept_client)
-# thread3 = threading.Thread(target=my_server.stream_video, args=(video_file, frame_rate))
+thread3 = threading.Thread(target=my_server.stream_video, args=(video_file, frame_rate))
 thread1.start()
-# thread3.start()
+thread3.start()
