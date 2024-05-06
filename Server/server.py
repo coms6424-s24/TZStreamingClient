@@ -1,8 +1,14 @@
+# Author: Qiuhong Chen
+# Date: 2024-5-4
+
 import cv2
 import socket
 import key
 import threading
-import pickle
+import Crypto
+from Crypto.PublicKey import RSA
+from Crypto.PublicKey.RSA import construct
+from Crypto.Cipher import PKCS1_OAEP
 
 
 # Video file
@@ -20,6 +26,10 @@ class rsa_pub_key:
     def set_key(self, e, n):
         self.e = e
         self.n = n
+        # print("e: ", e)
+        # print("n: ", n)
+        self.pubkey = construct((n, e))
+        self.cipher = PKCS1_OAEP.new(self.pubkey)
         self.valid = True
 
     def get_key(self):
@@ -29,13 +39,25 @@ class rsa_pub_key:
         # RSA key size is 1024 bits = 128 bytes
         # devide data into chunks and encrypt each chunk
         encrypted_data = b""
-        chunk_size = 128
+        # chunk size
+        input_chunk_size = 32
+        output_chunk_size = 128
         # zero padding
-        data += b"\x00" * (chunk_size - len(data) % chunk_size)
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i : i + chunk_size]
-            encrypted_chunk = pow(int.from_bytes(chunk, "little"), self.e, self.n)
-            encrypted_data += encrypted_chunk.to_bytes(128, "little")
+        data += b"\x00" * (input_chunk_size - len(data) % input_chunk_size)
+        for i in range(0, len(data), input_chunk_size):
+            chunk = data[i : i + input_chunk_size]
+            # print chunk in hex
+            # for i in chunk:
+            #     print(hex(i), end=":")
+            # print("\n")
+            # print("chunk length: ", len(chunk))
+            encrypted_chunk = self.cipher.encrypt(chunk)
+            # print("encrypted chunk length: ", len(encrypted_chunk))
+            # print encrypted_chunk in hex
+            # for i in encrypted_chunk:
+            #     print(hex(i), end=":")
+            # print("\n\n")
+            encrypted_data += encrypted_chunk
         return encrypted_data
 
 
@@ -53,7 +75,7 @@ class Server:
         self.client_socket_list = []
         # key
         self.server_key = key.insecure_key_storage()
-        print("Server running")
+        print("Server running...")
 
     def accept_client(self):  # thread1
         while True:
@@ -76,21 +98,18 @@ class Server:
 
         received_data = b""
         received_data = client_socket.recv(4096)
-        print("received data: ", received_data)
-        print("received data length: ", len(received_data))
+        # print("received data: ", received_data)
+        # print("received data length: ", len(received_data))
         # get length
-        len_e = int.from_bytes(received_data[0:4], "little")
-        len_n = int.from_bytes(received_data[4:8], "little")
-        # get e and n
-        e = int.from_bytes(
-            received_data[8 : 8 + len_e], "little"
+        len_n = int.from_bytes(received_data[0:4], "little")
+        len_e = int.from_bytes(received_data[4:8], "little")
+        # get n and e
+        n = int.from_bytes(
+            received_data[8 : 8 + len_n], "little"
         )  # received_data[8 : 8 + len_e]
-        n = int.from_bytes(received_data[8 + len_e : 8 + len_e + len_n], "little")
+        e = int.from_bytes(received_data[8 + len_n : 8 + len_e + len_n], "little")
         # print
         print("len_e: ", len_e)
-        # for i in e:
-        #     print(hex(i), end=":")
-        # print()
         print("e: ", e)
         print("len_n: ", len_n)
         print("n: ", n)
@@ -107,14 +126,27 @@ class Server:
             ret, frame = video_capture.read()
             # serialize the frame
             serialized_frame = cv2.imencode(".jpg", frame)[1].tobytes()
-            serialized_frame = ("0123456789" * 1000).encode()
+            serialized_frame = ("0123456789").encode()
             print(len(serialized_frame), "bytes of data")
             for client_socket, client_address, rsa_key in self.client_socket_list:
                 if rsa_key.is_valid():
                     # encode using rsa public key
                     encrypted_frame = rsa_key.encrypt(serialized_frame)
+                    # encrypted_frame = serialized_frame
                     print(len(encrypted_frame), "bytes of encrypted data")
-                    # client_socket.sendall(serialized_frame)
+                    print encrypted_frame in hex
+                    for i in encrypted_frame:
+                        print(hex(i), end=":")
+                    print("\n\n")
+                    try:
+                        client_socket.sendall(encrypted_frame)
+                    except:
+                        print(f"Error sending frame to {client_address}")
+                        self.client_socket_list.remove(
+                            (client_socket, client_address, rsa_key)
+                        )
+                        print(f"Connection with {client_address} closed")
+                        client_socket.close()
 
             cv2.imshow("Server Video", frame)
             cv2.waitKey(int(1000 / frame_rate))

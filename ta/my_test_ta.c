@@ -124,8 +124,9 @@ TEE_Result RSA_get_public_key_exponent_modulus(void *session, uint32_t param_typ
         EMSG("Failed to get object buffer attribute. TEE_GetObjectBufferAttribute res: 0x%x", result);
     }
 
-    DMSG("\nGet Public Key Exponent: %s\n", buffer1);
-    DMSG("\nGet Public Key Modulus: %s\n", buffer2);
+    DMSG("\nGet Public Key Exponent: %d bytes\n", buffer_len1);
+    DMSG("\nGet Public Key Modulus: %d bytes\n", buffer_len2);
+
 
     params[0].memref.size = buffer_len1;
     params[1].memref.size = buffer_len2;
