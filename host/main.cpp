@@ -175,28 +175,49 @@ void rsa_get_pub_key(struct tee_attrs *ta, pub_key *pk)
     printf("\n");
 }
 
-int main(int argc, char *argv[])
+void test(struct tee_attrs &ta)
 {
-    struct tee_attrs ta;
     char clear[RSA_MAX_PLAIN_LEN_1024] = "0123456789";
+    char ciph[RSA_CIPHER_LEN_1024];
     // print clear in hex
     for (int i = 0; i < RSA_MAX_PLAIN_LEN_1024; i++)
     {
         printf("%02x:", clear[i]);
     }
     printf("\n");
-    char ciph[RSA_CIPHER_LEN_1024];
+    rsa_encrypt(&ta, clear, RSA_MAX_PLAIN_LEN_1024, ciph, RSA_CIPHER_LEN_1024);
+    // print ciph in hex
+    for (int i = 0; i < RSA_CIPHER_LEN_1024; i++)
+    {
+        printf("%02x:", ciph[i]);
+    }
+    printf("\n");
+    rsa_decrypt(&ta, ciph, RSA_CIPHER_LEN_1024, clear, RSA_MAX_PLAIN_LEN_1024);
+}
 
+void print_hex(char *tmp_buffer, int count)
+{
+    printf("=================\n%d bytes:\n", count);
+    for (int i = 0; i < count; i++)
+    {
+        printf("%02x:", tmp_buffer[i]);
+    }
+    printf("\n");
+}
+
+int main(int argc, char *argv[])
+{
+    struct tee_attrs ta;
+
+    // ========================== init TEE================================
     init_tee_session(&ta);
-
     // generate key and get public key from TA
     rsa_gen_keys(&ta);
     pub_key pk;
     rsa_get_pub_key(&ta, &pk);
-    // test
-    rsa_encrypt(&ta, clear, RSA_MAX_PLAIN_LEN_1024, ciph, RSA_CIPHER_LEN_1024);
-    rsa_decrypt(&ta, ciph, RSA_CIPHER_LEN_1024, clear, RSA_MAX_PLAIN_LEN_1024);
-    // send to server
+    // ========================== test encrypt &decrypt ================================
+    test(ta);
+    // ==========================Connection================================
     if (open_connection())
     {
         decrypted_frame = new char[BUFFER_SIZE];
@@ -204,38 +225,22 @@ int main(int argc, char *argv[])
         int cnt = 3;
         while (1)
         {
+            // receive frame
             int count = receive_frame();
             if (cnt-- > 0)
                 continue;
-            printf("Received %d bytes\n", count);
-            // print received data in hex
-            for (int i = 0; i < count; i++)
-            {
-                printf("%02x:", buffer[i]);
-            }
-            printf("\n");
+            print_hex(buffer, count);
             // decrypt
-            int input_chunk_size = 128;
+            int input_chunk_size = 64;
             int output_chunk_size = 128;
             printf("chunk number %d", count / input_chunk_size);
             for (int i = 0; i < count / input_chunk_size; i++)
             {
-                // print the chunk in hex
-                for (int j = 0; j < input_chunk_size; j++)
-                {
-                    printf("%02x:", buffer[i * input_chunk_size + j]);
-                }
-                printf("\n");
+                print_hex(buffer + i * input_chunk_size, input_chunk_size);
                 rsa_decrypt(&ta, buffer + i * input_chunk_size, RSA_CIPHER_LEN_1024, decrypted_frame + i * output_chunk_size, RSA_MAX_PLAIN_LEN_1024);
             }
             int decrypted_count = count * output_chunk_size / input_chunk_size;
-            printf("decrypted %d bytes\n", decrypted_count);
-            for (int i = 0; i < decrypted_count; i++)
-            {
-                // print decrypted frame in char
-                printf("%c", decrypted_frame[i]);
-            }
-            printf("\n");
+            print_hex(decrypted_frame, decrypted_count);
         }
     }
 

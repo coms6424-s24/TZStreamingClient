@@ -16,6 +16,12 @@ frame_rate = 1  # fps
 video_file = "big_buck_bunny_240p_30mb.mp4"
 
 
+def print_hex(data):
+    for i in data:
+        print(hex(i), end=":")
+    print("")
+
+
 class rsa_pub_key:
     def __init__(self):
         self.valid = False
@@ -47,16 +53,12 @@ class rsa_pub_key:
         for i in range(0, len(data), input_chunk_size):
             chunk = data[i : i + input_chunk_size]
             # print chunk in hex
-            # for i in chunk:
-            #     print(hex(i), end=":")
-            # print("\n")
+            # print_hex(chunk)
             # print("chunk length: ", len(chunk))
             encrypted_chunk = self.cipher.encrypt(chunk)
             # print("encrypted chunk length: ", len(encrypted_chunk))
             # print encrypted_chunk in hex
-            # for i in encrypted_chunk:
-            #     print(hex(i), end=":")
-            # print("\n\n")
+            # print_hex(encrypted_chunk)
             encrypted_data += encrypted_chunk
         return encrypted_data
 
@@ -98,8 +100,6 @@ class Server:
 
         received_data = b""
         received_data = client_socket.recv(4096)
-        # print("received data: ", received_data)
-        # print("received data length: ", len(received_data))
         # get length
         len_n = int.from_bytes(received_data[0:4], "little")
         len_e = int.from_bytes(received_data[4:8], "little")
@@ -127,17 +127,14 @@ class Server:
             # serialize the frame
             serialized_frame = cv2.imencode(".jpg", frame)[1].tobytes()
             serialized_frame = ("0123456789").encode()
-            print(len(serialized_frame), "bytes of data")
+            print_hex(serialized_frame)
             for client_socket, client_address, rsa_key in self.client_socket_list:
                 if rsa_key.is_valid():
                     # encode using rsa public key
                     encrypted_frame = rsa_key.encrypt(serialized_frame)
-                    # encrypted_frame = serialized_frame
                     print(len(encrypted_frame), "bytes of encrypted data")
-                    print encrypted_frame in hex
-                    for i in encrypted_frame:
-                        print(hex(i), end=":")
-                    print("\n\n")
+                    # print encrypted_frame in hex
+                    print_hex(encrypted_frame)
                     try:
                         client_socket.sendall(encrypted_frame)
                     except:
